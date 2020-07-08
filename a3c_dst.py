@@ -16,12 +16,12 @@ from torch.utils.tensorboard import SummaryWriter
 from deep_sea_treasure_env.deep_sea_treasure_env import DeepSeaTreasureEnv
 
 # Hyperparameters
-n_train_processes = 3
+n_train_processes = 5
 learning_rate = 0.0002
 update_interval = 5
 gamma = 0.98
-max_train_ep = 30
-max_test_ep = 40
+max_train_ep = 300
+max_test_ep = 300
 goal_size = 10
 
 
@@ -105,15 +105,21 @@ def train(rank, weights, data_pool ):
         data_pool.put((n_epi, rank, loss.detach().mean(), pi.detach().mean(), advantage.detach().mean(), avg_reward_1, avg_reward_2), False)
 
     env.close()
+
+    while not data_pool.empty():
+        print(f'not all data consumed, waiting...')
+        time.sleep(1)
+
     print("Training process {} reached maximum episode.".format(rank))
 
 
-def test(weights, data_pool, summary_writer):
+def test(weights, data_pool):
+    summary_writer = SummaryWriter(filename_suffix=datetime.datetime.now().ctime().replace(" ", "_"))
     time.sleep(.10)
-    reward_list = np.empty((100, max_test_ep-1), dtype=tuple)
-    loss_list = np.empty((100, max_test_ep-1), dtype=float)
-    pi_list = np.empty((100, max_test_ep-1), dtype=float)
-    advantage_list = np.empty((100, max_test_ep-1), dtype=float)
+    reward_list = np.empty((100, max_test_ep), dtype=tuple)
+    loss_list = np.empty((100, max_test_ep), dtype=float)
+    pi_list = np.empty((100, max_test_ep), dtype=float)
+    advantage_list = np.empty((100, max_test_ep), dtype=float)
 
     for i in range(0, max_test_ep-1):
         # receive rewards
@@ -134,42 +140,42 @@ def test(weights, data_pool, summary_writer):
             pi_list[rank][n_epi] = pi
             advantage_list[rank][n_epi] = advantage
 
-        # # calculate hypervolume
-        # print('calculating hypervolume')
-        # reward_set = reward_list[:, i]
-        # reward_set = list(filter(None, reward_set))
-        # if reward_set:
-        #     hypervolume = hv.hypervolume(reward_set, [100, 100])
-        #     print(f'Hypervolume indicator for episode {i}: {hypervolume} for {len(reward_set)} points')
-        #     summary_writer.add_scalar("hypervolume_indicator", hypervolume, i)
-        # else:
-        #     print('reward_set is empty')
-        #
-        # for agent_rank in range(0, 99):
-        #     if loss_list[agent_rank][i]:
-        #         summary_writer.add_scalar(
-        #             f'agent_{agent_rank}_weights_{weights[agent_rank][0]}_{weights[agent_rank][1]}_loss',
-        #             loss_list[agent_rank][i], i)
-        #
-        #     if pi_list[agent_rank][i]:
-        #         summary_writer.add_scalar(
-        #             f'agent_{agent_rank}_weights_{weights[agent_rank][0]}_{weights[agent_rank][1]}_pi',
-        #             pi_list[agent_rank][i], i)
-        #
-        #     if advantage_list[agent_rank][i]:
-        #         summary_writer.add_scalar(
-        #             f'agent_{agent_rank}_weights_{weights[agent_rank][0]}_{weights[agent_rank][1]}_advantage',
-        #             advantage_list[agent_rank][i], i)
-        #
-        #     if reward_list[agent_rank][i]:
-        #         summary_writer.add_scalar(
-        #             f'agent_{agent_rank}_weights_{weights[agent_rank][0]}_{weights[agent_rank][1]}_reward_1',
-        #             reward_list[agent_rank][i][0], i)
-        #
-        #     if reward_list[agent_rank][i]:
-        #         summary_writer.add_scalar(
-        #             f'agent_{agent_rank}_weights_{weights[agent_rank][0]}_{weights[agent_rank][1]}_reward_2',
-        #             reward_list[agent_rank][i][1], i)
+        # calculate hypervolume
+        print('calculating hypervolume')
+        reward_set = reward_list[:, i]
+        reward_set = list(filter(None, reward_set))
+        if reward_set:
+            hypervolume = hv.hypervolume(reward_set, [100, 100])
+            print(f'Hypervolume indicator for episode {i}: {hypervolume} for {len(reward_set)} points')
+            summary_writer.add_scalar("hypervolume_indicator", hypervolume, i)
+        else:
+            print('reward_set is empty')
+
+        for agent_rank in range(1, n_train_processes-1):
+            if loss_list[agent_rank][i]:
+                summary_writer.add_scalar(
+                    f'agent_{agent_rank}_weights_{weights[agent_rank][0]}_{weights[agent_rank][1]}_loss',
+                    loss_list[agent_rank][i], i)
+
+            if pi_list[agent_rank][i]:
+                summary_writer.add_scalar(
+                    f'agent_{agent_rank}_weights_{weights[agent_rank][0]}_{weights[agent_rank][1]}_pi',
+                    pi_list[agent_rank][i], i)
+
+            if advantage_list[agent_rank][i]:
+                summary_writer.add_scalar(
+                    f'agent_{agent_rank}_weights_{weights[agent_rank][0]}_{weights[agent_rank][1]}_advantage',
+                    advantage_list[agent_rank][i], i)
+
+            if reward_list[agent_rank][i]:
+                summary_writer.add_scalar(
+                    f'agent_{agent_rank}_weights_{weights[agent_rank][0]}_{weights[agent_rank][1]}_reward_1',
+                    reward_list[agent_rank][i][0], i)
+
+            if reward_list[agent_rank][i]:
+                summary_writer.add_scalar(
+                    f'agent_{agent_rank}_weights_{weights[agent_rank][0]}_{weights[agent_rank][1]}_reward_2',
+                    reward_list[agent_rank][i][1], i)
 
         time.sleep(.1)
 
@@ -177,16 +183,15 @@ def test(weights, data_pool, summary_writer):
 if __name__ == '__main__':
     global_model = ActorCritic()
     global_model.share_memory()
-    #data_pool = mp.Queue()
     data_pool = mp.Queue()
-    summary_writer = SummaryWriter(filename_suffix=datetime.datetime.now().ctime().replace(" ", "_"))
 
-    weights = list(itertools.product(range(1, goal_size, n_train_processes), range(1, goal_size, n_train_processes)))
+    weights = list(itertools.product(range(0, goal_size, int(goal_size / n_train_processes)),
+                                     range(0, goal_size, int(goal_size / n_train_processes))))
 
     processes = []
-    for rank in range(n_train_processes + 1):  # + 1 for test process
+    for rank in range(0, n_train_processes + 1):  # + 1 for test process
         if rank == 0:
-            p = mp.Process(target=test, args=(weights, data_pool, summary_writer))
+            p = mp.Process(target=test, args=(weights, data_pool))
         else:
             p = mp.Process(target=train, args=(rank, weights[rank-1], data_pool))
         p.start()
