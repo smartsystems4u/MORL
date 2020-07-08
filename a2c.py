@@ -7,6 +7,7 @@ from torch.distributions import Categorical
 import torch.multiprocessing as mp
 import time
 import numpy as np
+from deep_sea_treasure_env.deep_sea_treasure_env import DeepSeaTreasureEnv
 
 # Hyperparameters
 n_train_processes = 3
@@ -19,8 +20,8 @@ PRINT_INTERVAL = update_interval * 100
 class ActorCritic(nn.Module):
     def __init__(self):
         super(ActorCritic, self).__init__()
-        self.fc1 = nn.Linear(4, 256)
-        self.fc_pi = nn.Linear(256, 2)
+        self.fc1 = nn.Linear(3, 256)
+        self.fc_pi = nn.Linear(256, 4)
         self.fc_v = nn.Linear(256, 1)
 
     def pi(self, x, softmax_dim=1):
@@ -36,7 +37,8 @@ class ActorCritic(nn.Module):
 
 def worker(worker_id, master_end, worker_end):
     master_end.close()  # Forbid worker to use the master end for messaging
-    env = gym.make('CartPole-v1')
+    #env = gym.make('CartPole-v1')
+    env = DeepSeaTreasureEnv()
     env.seed(worker_id)
 
     while True:
@@ -113,7 +115,8 @@ class ParallelEnv:
             self.closed = True
 
 def test(step_idx, model):
-    env = gym.make('CartPole-v1')
+    #env = gym.make('CartPole-v1')
+    env = DeepSeaTreasureEnv()
     score = 0.0
     done = False
     num_test = 10
@@ -169,7 +172,7 @@ if __name__ == '__main__':
         td_target = compute_target(v_final, r_lst, mask_lst)
 
         td_target_vec = td_target.reshape(-1)
-        s_vec = torch.tensor(s_lst).float().reshape(-1, 4)  # 4 == Dimension of state
+        s_vec = torch.tensor(s_lst).float().reshape(-1, 3)  # 4 == Dimension of state
         a_vec = torch.tensor(a_lst).reshape(-1).unsqueeze(1)
         advantage = td_target_vec - model.v(s_vec).reshape(-1)
 
