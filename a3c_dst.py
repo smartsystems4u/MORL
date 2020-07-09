@@ -20,8 +20,8 @@ n_train_processes = 5
 learning_rate = 0.0002
 update_interval = 5
 gamma = 0.98
-max_train_ep = 300
-max_test_ep = 300
+max_train_ep = 3000
+max_test_ep = 3000
 goal_size = 10
 
 
@@ -46,13 +46,19 @@ class ActorCritic(nn.Module):
 
 def train(rank, weights, data_pool ):
     local_model = ActorCritic()
-    local_model.load_state_dict(global_model.state_dict())
+    #local_model.load_state_dict(global_model.state_dict())
 
-    optimizer = optim.Adam(global_model.parameters(), lr=learning_rate)
+    optimizer = optim.Adam(local_model.parameters(), lr=learning_rate)
 
     env = DeepSeaTreasureEnv()
 
     for n_epi in range(max_train_ep):
+        epoch_reward1 = []
+        epoch_reward2 = []
+        epoch_loss = []
+        epoch_pi = []
+        epoch_v = []
+        epoch_advantage = []
         done = False
         s = env.reset()
         while not done:
@@ -101,8 +107,18 @@ def train(rank, weights, data_pool ):
             #    weights[1] * (sum([reward[1] for reward in r_lst]) / len(r_lst))
             avg_reward_1 = sum([reward[0] for reward in r_lst]) / len(r_lst)
             avg_reward_2 = sum([reward[1] for reward in r_lst]) / len(r_lst)
+            epoch_reward1.append(avg_reward_1)
+            epoch_reward2.append(avg_reward_2)
+            epoch_v.append(local_model.v(s_batch).detach().mean())
+            epoch_pi.append(pi.detach().mean())
+            epoch_advantage.append(advantage.detach().mean())
+            epoch_loss.append(loss.detach().mean())
 
-        data_pool.put((n_epi, rank, loss.detach().mean(), pi.detach().mean(), advantage.detach().mean(), avg_reward_1, avg_reward_2), False)
+        data_pool.put((n_epi, rank, sum(epoch_loss) / len(epoch_loss),
+                                    sum(epoch_pi) / len(epoch_pi),
+                                    sum(epoch_advantage) / len(epoch_advantage),
+                                    sum(epoch_reward1) / len(epoch_reward1),
+                                    sum(epoch_reward2) / len(epoch_reward2), False))
 
     env.close()
 
@@ -151,7 +167,7 @@ def test(weights, data_pool):
         else:
             print('reward_set is empty')
 
-        for agent_rank in range(1, n_train_processes-1):
+        for agent_rank in range(1, n_train_processes+1):
             if loss_list[agent_rank][i]:
                 summary_writer.add_scalar(
                     f'agent_{agent_rank}_weights_{weights[agent_rank][0]}_{weights[agent_rank][1]}_loss',
