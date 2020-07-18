@@ -48,8 +48,9 @@ class DeepSeaTreasureEnv(gym.Env):
         self.grid[9, 10] = 124
 
         self.position = 0
-        self.time_spent = 0
+        self.steps_taken = 0
         self.treasure_value = 0
+        self.time_penalty = 0
 
         #actions:
         # 0 - Up
@@ -82,11 +83,13 @@ class DeepSeaTreasureEnv(gym.Env):
 
         #account for time spent (even doing illegal moves)
         if self.grid[col, row] == -1:
-            self.time_spent += 1
+            self.steps_taken += 1
+            self.time_penalty += 1
             return
         else:
             self.position = row * 10 + col
-            self.time_spent += 1
+            self.steps_taken += 1
+            self.time_penalty += 1
             self.treasure_value = self.grid[self.position % 10, self.position // 10]
 
 
@@ -95,9 +98,10 @@ class DeepSeaTreasureEnv(gym.Env):
 
     def reset(self):
         self.position = 0
-        self.time_spent = 0
+        self.steps_taken = 0
+        self.time_penalty = 0
         self.treasure_value = 0
-        obs = np.array([self.position, self.time_spent, self.treasure_value])
+        obs = np.array([self.position, self.time_penalty, self.treasure_value])
         return obs
 
     def step(self, action):
@@ -120,15 +124,16 @@ class DeepSeaTreasureEnv(gym.Env):
 
         self.move(action)
 
-        obs = np.array([self.position, self.time_spent, self.treasure_value])
+        obs = np.array([self.position, self.time_penalty, self.treasure_value])
 
-        reward = -self.time_spent, self.treasure_value
+        reward = -self.time_penalty, self.treasure_value
 
-        #return reward after max steps or when treasure found
-        # if (self.treasure_value > 0):
+        #reset time penalty after treasure find
+        if (self.treasure_value > 0):
+            self.time_penalty = 0
         #     reward = self.scale_treasure * self.treasure_value - self.scale_time * self.time_spent
 
-        if (self.time_spent >= self.max_steps):
+        if (self.steps_taken >= self.max_steps):
             done = True
             # reward = - self.scale_time * self.time_spent
 

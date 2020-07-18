@@ -17,11 +17,11 @@ from deep_sea_treasure_env.deep_sea_treasure_env import DeepSeaTreasureEnv
 
 # Hyperparameters
 n_train_processes = 5
-learning_rate = 0.0002
+learning_rate = 0.00002
 update_interval = 5
 gamma = 0.98
-max_train_ep = 3000
-max_test_ep = 3000
+max_train_ep = 20000
+max_test_ep = 20000
 goal_size = 10
 
 
@@ -118,7 +118,7 @@ def train(rank, weights, data_pool ):
                                     sum(epoch_pi) / len(epoch_pi),
                                     sum(epoch_advantage) / len(epoch_advantage),
                                     sum(epoch_reward1) / len(epoch_reward1),
-                                    sum(epoch_reward2) / len(epoch_reward2), False))
+                                    sum(epoch_reward2) / len(epoch_reward2)), False)
 
     env.close()
 
@@ -201,15 +201,18 @@ if __name__ == '__main__':
     global_model.share_memory()
     data_pool = mp.Queue()
 
-    weights = list(itertools.product(range(0, goal_size, int(goal_size / n_train_processes)),
-                                     range(0, goal_size, int(goal_size / n_train_processes))))
+    weights = np.array(list(itertools.product(range(0, goal_size, int(goal_size / n_train_processes)),
+                                     range(0, goal_size, int(goal_size / n_train_processes)))))
+
+    #randomly sample from weightspace
+    selected_weights = np.random.choice(len(weights), n_train_processes+1, replace=False)
 
     processes = []
     for rank in range(0, n_train_processes + 1):  # + 1 for test process
         if rank == 0:
-            p = mp.Process(target=test, args=(weights, data_pool))
+            p = mp.Process(target=test, args=(weights[selected_weights], data_pool))
         else:
-            p = mp.Process(target=train, args=(rank, weights[rank-1], data_pool))
+            p = mp.Process(target=train, args=(rank, weights[selected_weights][rank-1], data_pool))
         p.start()
         processes.append(p)
     for p in processes:
