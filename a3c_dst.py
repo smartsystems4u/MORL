@@ -1,7 +1,8 @@
 import itertools
-import torch.multiprocessing as mp
+# import torch.multiprocessing as mp
+import queue
 import datetime
-# import multiprocessing as mp
+import multiprocessing as mp
 import time
 import numpy as np
 
@@ -12,7 +13,6 @@ import torch.optim as optim
 from torch.distributions import Categorical
 from deap.tools.indicator import hv
 from torch.utils.tensorboard import SummaryWriter
-
 from deep_sea_treasure_env.deep_sea_treasure_env import DeepSeaTreasureEnv
 
 # Hyperparameters
@@ -20,8 +20,8 @@ n_train_processes = 5
 learning_rate = 0.00002
 update_interval = 5
 gamma = 0.98
-max_train_ep = 20000
-max_test_ep = 20000
+max_train_ep = 2000
+max_test_ep = 2000
 goal_size = 10
 
 
@@ -45,6 +45,7 @@ class ActorCritic(nn.Module):
 
 
 def train(rank, weights, data_pool ):
+    print(f'agent_{rank} starting...')
     local_model = ActorCritic()
     #local_model.load_state_dict(global_model.state_dict())
 
@@ -110,28 +111,50 @@ def train(rank, weights, data_pool ):
             epoch_reward1.append(avg_reward_1)
             epoch_reward2.append(avg_reward_2)
             epoch_v.append(local_model.v(s_batch).detach().mean())
-            epoch_pi.append(pi.detach().mean())
+            epoch_pi.append(pi.argmax(dim=1).median())
             epoch_advantage.append(advantage.detach().mean())
             epoch_loss.append(loss.detach().mean())
 
-        data_pool.put((n_epi, rank, sum(epoch_loss) / len(epoch_loss),
+        sent = False
+        while not sent:
+            try:
+                data_pool.put_nowait((n_epi, rank, sum(epoch_loss) / len(epoch_loss),
                                     sum(epoch_pi) / len(epoch_pi),
                                     sum(epoch_advantage) / len(epoch_advantage),
                                     sum(epoch_reward1) / len(epoch_reward1),
-                                    sum(epoch_reward2) / len(epoch_reward2)), False)
+                                    sum(epoch_reward2) / len(epoch_reward2)))
+
+                sent = True
+            except queue.Full:
+                print('queue in the queue, waiting....')
+                time.sleep(0.1)
+
+        time.sleep(0.1)  # Yield remaining time
+        if n_epi % 100 == 0:
+            time.sleep(1)
 
     env.close()
 
-    while not data_pool.empty():
-        print(f'not all data consumed, waiting...')
-        time.sleep(1)
+    # while not data_pool.empty():
+    #     print(f'not all data consumed, waiting...')
+    #     time.sleep(1)
 
     print("Training process {} reached maximum episode.".format(rank))
 
+def data_complete(loss_list, epoch):
+    for i in range(1, n_train_processes+1):
+        if loss_list[i, epoch] == 0:
+            return False
+
+    return True
 
 def test(weights, data_pool):
     summary_writer = SummaryWriter(filename_suffix=datetime.datetime.now().ctime().replace(" ", "_"))
-    time.sleep(.10)
+    time.sleep(10)
+    # while data_pool.empty():
+    #     print('Start Logging: Waiting for data...')
+    #     time.sleep(1)
+
     reward_list = np.empty((100, max_test_ep), dtype=tuple)
     loss_list = np.empty((100, max_test_ep), dtype=float)
     pi_list = np.empty((100, max_test_ep), dtype=float)
@@ -140,21 +163,27 @@ def test(weights, data_pool):
     for i in range(0, max_test_ep-1):
         # receive rewards
         print(f'checking for new data for epoch {i}')
-        while not data_pool.empty():
-            data = data_pool.get(False)
-            print(f'got data: {data}')
-            n_epi = data[0]
-            rank = data[1]
-            loss = data[2]
-            pi = data[3]
-            advantage = data[4]
-            avg_reward_1 = data[5]
-            avg_reward_2 = data[6]
+        while not data_complete(loss_list, i):
+            try:
+                data = data_pool.get_nowait()
 
-            reward_list[rank][n_epi] = (avg_reward_1, avg_reward_2)
-            loss_list[rank][n_epi] = loss
-            pi_list[rank][n_epi] = pi
-            advantage_list[rank][n_epi] = advantage
+                print(f'got data: {data}')
+                n_epi = data[0]
+                rank = data[1]
+                loss = data[2]
+                pi = data[3]
+                advantage = data[4]
+                avg_reward_1 = data[5]
+                avg_reward_2 = data[6]
+
+                reward_list[rank][n_epi] = (avg_reward_1, avg_reward_2)
+                loss_list[rank][n_epi] = loss
+                pi_list[rank][n_epi] = pi
+                advantage_list[rank][n_epi] = advantage
+            except queue.Empty:
+                print('Log Epoch: Waiting for data...')
+                time.sleep(1)
+
 
         # calculate hypervolume
         print('calculating hypervolume')
@@ -168,35 +197,42 @@ def test(weights, data_pool):
             print('reward_set is empty')
 
         for agent_rank in range(1, n_train_processes+1):
+            summary_writer.add_scalar(f'agent_{agent_rank}_weight_1', weights[agent_rank][0], i)
+            summary_writer.add_scalar(f'agent_{agent_rank}_weight_2', weights[agent_rank][1], i)
+
             if loss_list[agent_rank][i]:
-                summary_writer.add_scalar(
-                    f'agent_{agent_rank}_weights_{weights[agent_rank][0]}_{weights[agent_rank][1]}_loss',
-                    loss_list[agent_rank][i], i)
+                summary_writer.add_scalar(f'agent_{agent_rank}_loss',loss_list[agent_rank][i], i)
+                # summary_writer.add_scalar(
+                #     f'agent_{agent_rank}_weights_{weights[agent_rank][0]}_{weights[agent_rank][1]}_loss',
+                #     loss_list[agent_rank][i], i)
 
             if pi_list[agent_rank][i]:
-                summary_writer.add_scalar(
-                    f'agent_{agent_rank}_weights_{weights[agent_rank][0]}_{weights[agent_rank][1]}_pi',
-                    pi_list[agent_rank][i], i)
+                summary_writer.add_scalar(f'agent_{agent_rank}_pi', pi_list[agent_rank][i], i)
+                # summary_writer.add_scalar(
+                #     f'agent_{agent_rank}_weights_{weights[agent_rank][0]}_{weights[agent_rank][1]}_pi',
+                #     pi_list[agent_rank][i], i)
 
             if advantage_list[agent_rank][i]:
-                summary_writer.add_scalar(
-                    f'agent_{agent_rank}_weights_{weights[agent_rank][0]}_{weights[agent_rank][1]}_advantage',
-                    advantage_list[agent_rank][i], i)
+                summary_writer.add_scalar(f'agent_{agent_rank}_advantage', advantage_list[agent_rank][i], i)
+                # summary_writer.add_scalar(
+                #     f'agent_{agent_rank}_weights_{weights[agent_rank][0]}_{weights[agent_rank][1]}_advantage',
+                #     advantage_list[agent_rank][i], i)
 
             if reward_list[agent_rank][i]:
-                summary_writer.add_scalar(
-                    f'agent_{agent_rank}_weights_{weights[agent_rank][0]}_{weights[agent_rank][1]}_reward_1',
-                    reward_list[agent_rank][i][0], i)
+                summary_writer.add_scalar(f'agent_{agent_rank}_reward_1', reward_list[agent_rank][i][0], i)
+                # summary_writer.add_scalar(
+                #     f'agent_{agent_rank}_weights_{weights[agent_rank][0]}_{weights[agent_rank][1]}_reward_1',
+                #     reward_list[agent_rank][i][0], i)
 
             if reward_list[agent_rank][i]:
-                summary_writer.add_scalar(
-                    f'agent_{agent_rank}_weights_{weights[agent_rank][0]}_{weights[agent_rank][1]}_reward_2',
-                    reward_list[agent_rank][i][1], i)
-
-        time.sleep(.1)
+                summary_writer.add_scalar(f'agent_{agent_rank}_reward_2', reward_list[agent_rank][i][1], i)
+                # summary_writer.add_scalar(
+                #     f'agent_{agent_rank}_weights_{weights[agent_rank][0]}_{weights[agent_rank][1]}_reward_2',
+                #     reward_list[agent_rank][i][1], i)
 
 
 if __name__ == '__main__':
+    # mp.set_start_method('spawn')  # Deal with fork issues
     global_model = ActorCritic()
     global_model.share_memory()
     data_pool = mp.Queue()

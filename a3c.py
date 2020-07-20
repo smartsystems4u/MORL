@@ -9,7 +9,7 @@ import multiprocessing as mp
 import time
 
 # Hyperparameters
-n_train_processes = 3
+n_train_processes = 5
 learning_rate = 0.0002
 update_interval = 5
 gamma = 0.98

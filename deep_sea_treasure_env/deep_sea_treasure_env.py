@@ -128,12 +128,13 @@ class DeepSeaTreasureEnv(gym.Env):
 
         reward = -self.time_penalty, self.treasure_value
 
-        #reset time penalty after treasure find
+        # reset time penalty after treasure find
         if (self.treasure_value > 0):
             self.time_penalty = 0
         #     reward = self.scale_treasure * self.treasure_value - self.scale_time * self.time_spent
 
-        if (self.steps_taken >= self.max_steps):
+        # if (self.steps_taken >= self.max_steps):
+        if(self.treasure_value > 0):
             done = True
             # reward = - self.scale_time * self.time_spent
 
