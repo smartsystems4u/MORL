@@ -28,19 +28,19 @@ goal_size = 10
 class ActorCritic(nn.Module):
     def __init__(self):
         super(ActorCritic, self).__init__()
-        self.fc1 = nn.Linear(3, 256)
-        self.fc_pi = nn.Linear(256, 4)
-        self.fc_v = nn.Linear(256, 1)
+        self.fc1 = nn.Linear(3, 256).float()
+        self.fc_pi = nn.Linear(256, 4).float()
+        self.fc_v = nn.Linear(256, 1).float()
 
     def pi(self, x, softmax_dim=0):
-        x = F.relu(self.fc1(x))
-        x = self.fc_pi(x)
-        prob = F.softmax(x, dim=softmax_dim)
+        x = F.relu(self.fc1(x)).float()
+        x = self.fc_pi(x).float()
+        prob = F.softmax(x, dim=softmax_dim).float()
         return prob
 
     def v(self, x):
-        x = F.relu(self.fc1(x))
-        v = self.fc_v(x)
+        x = F.relu(self.fc1(x)).float()
+        v = self.fc_v(x).float()
         return v
 
 
