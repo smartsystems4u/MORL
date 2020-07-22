@@ -11,7 +11,7 @@ class DeepSeaTreasureEnv(gym.Env):
         time as possible. There is no one optimal policy to solve this but a collection of policies which are
         equally optimal.
     '''
-    def __init__(self, max_steps=100):
+    def __init__(self, max_steps=2000):
 
         #limit on time spent seeking treasure
         self.max_steps = max_steps
@@ -133,7 +133,9 @@ class DeepSeaTreasureEnv(gym.Env):
             self.time_penalty = 0
         #     reward = self.scale_treasure * self.treasure_value - self.scale_time * self.time_spent
 
-        # if (self.steps_taken >= self.max_steps):
+        if (self.steps_taken >= self.max_steps):
+            done = True
+
         if(self.treasure_value > 0):
             done = True
             # reward = - self.scale_time * self.time_spent

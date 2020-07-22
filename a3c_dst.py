@@ -20,8 +20,8 @@ n_train_processes = 5
 learning_rate = 0.00002
 update_interval = 5
 gamma = 0.98
-max_train_ep = 2000
-max_test_ep = 2000
+max_train_ep = 200
+max_test_ep = 200
 goal_size = 10
 
 
@@ -54,6 +54,7 @@ def train(rank, weights, data_pool ):
     env = DeepSeaTreasureEnv()
 
     for n_epi in range(max_train_ep):
+        print(f'agent {rank} starting epoch {n_epi}')
         epoch_reward1 = []
         epoch_reward2 = []
         epoch_loss = []
@@ -135,9 +136,9 @@ def train(rank, weights, data_pool ):
 
     env.close()
 
-    # while not data_pool.empty():
-    #     print(f'not all data consumed, waiting...')
-    #     time.sleep(1)
+    while not data_pool.empty():
+        print(f'not all data consumed, waiting...')
+        time.sleep(1)
 
     print("Training process {} reached maximum episode.".format(rank))
 
@@ -160,7 +161,7 @@ def test(weights, data_pool):
     pi_list = np.empty((100, max_test_ep), dtype=float)
     advantage_list = np.empty((100, max_test_ep), dtype=float)
 
-    for i in range(0, max_test_ep-1):
+    for i in range(max_test_ep):
         # receive rewards
         print(f'checking for new data for epoch {i}')
         while not data_complete(loss_list, i):
@@ -232,7 +233,7 @@ def test(weights, data_pool):
 
 
 if __name__ == '__main__':
-    # mp.set_start_method('spawn')  # Deal with fork issues
+    mp.set_start_method('spawn')  # Deal with fork issues
     global_model = ActorCritic()
     global_model.share_memory()
     data_pool = mp.Queue()
