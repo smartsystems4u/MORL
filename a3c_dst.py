@@ -20,8 +20,8 @@ n_train_processes = 5
 learning_rate = 0.00002
 update_interval = 5
 gamma = 0.98
-max_train_ep = 200
-max_test_ep = 200
+max_train_ep = 2000
+max_test_ep = 2000
 goal_size = 10
 
 
@@ -130,9 +130,9 @@ def train(rank, weights, data_pool ):
                 print('queue in the queue, waiting....')
                 time.sleep(0.1)
 
-        time.sleep(0.1)  # Yield remaining time
-        if n_epi % 100 == 0:
-            time.sleep(1)
+        time.sleep(0)  # Yield remaining time
+        # if n_epi % 100 == 0:
+        #     time.sleep(1)
 
     env.close()
 
@@ -151,7 +151,7 @@ def data_complete(loss_list, epoch):
 
 def test(weights, data_pool):
     summary_writer = SummaryWriter(filename_suffix=datetime.datetime.now().ctime().replace(" ", "_"))
-    time.sleep(10)
+    # time.sleep(10)
     # while data_pool.empty():
     #     print('Start Logging: Waiting for data...')
     #     time.sleep(1)
@@ -183,7 +183,7 @@ def test(weights, data_pool):
                 advantage_list[rank][n_epi] = advantage
             except queue.Empty:
                 print('Log Epoch: Waiting for data...')
-                time.sleep(1)
+                time.sleep(.5)
 
 
         # calculate hypervolume
