@@ -28,19 +28,19 @@ goal_size = 10
 class ActorCritic(nn.Module):
     def __init__(self):
         super(ActorCritic, self).__init__()
-        self.fc1 = nn.Linear(3, 256).float()
-        self.fc_pi = nn.Linear(256, 4).float()
-        self.fc_v = nn.Linear(256, 1).float()
+        self.fc1 = nn.Linear(3, 256)
+        self.fc_pi = nn.Linear(256, 4)
+        self.fc_v = nn.Linear(256, 1)
 
     def pi(self, x, softmax_dim=0):
-        x = F.relu(self.fc1(x)).float()
-        x = self.fc_pi(x).float()
-        prob = F.softmax(x, dim=softmax_dim).float()
+        x = F.relu(self.fc1(x))
+        x = self.fc_pi(x)
+        prob = F.softmax(x, dim=softmax_dim)
         return prob
 
     def v(self, x):
-        x = F.relu(self.fc1(x)).float()
-        v = self.fc_v(x).float()
+        x = F.relu(self.fc1(x))
+        v = self.fc_v(x)
         return v
 
 
@@ -84,7 +84,7 @@ def train(rank, weights, data_pool ):
             td_target_lst = []
             for reward in r_lst[::-1]:
                 R = gamma * R + weights[0] * reward[0] + weights[1] * reward[1]
-                td_target_lst.append([R])
+                td_target_lst.append([np.double(R)])
             td_target_lst.reverse()
 
             s_batch, a_batch, td_target = torch.tensor(s_lst, dtype=torch.float), torch.tensor(a_lst), \
@@ -93,8 +93,8 @@ def train(rank, weights, data_pool ):
 
             pi = local_model.pi(s_batch, softmax_dim=1)
             pi_a = pi.gather(1, a_batch)
-            loss = -torch.log(pi_a) * advantage.detach() + \
-                F.smooth_l1_loss(local_model.v(s_batch), td_target.detach())
+            loss = -torch.log(pi_a) * advantage.float().detach() + \
+                F.smooth_l1_loss(local_model.v(s_batch), td_target.float().detach())
 
             optimizer.zero_grad()
             loss.mean().backward()
