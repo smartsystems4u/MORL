@@ -169,7 +169,8 @@ def test(weights, data_pool):
         if i % log_interval == 0:
             print(f'checking for new data for epoch {i}')
 
-        while not data_complete(loss_list, i):
+        queue_empty = False
+        while not data_complete(loss_list, i) and not queue_empty:
             try:
                 data = data_pool.get_nowait()
 
@@ -189,6 +190,7 @@ def test(weights, data_pool):
                 pi_list[rank][n_epi] = pi
                 advantage_list[rank][n_epi] = advantage
             except queue.Empty:
+                queue_empty = True
                 print('Log Epoch: Waiting for data...')
                 time.sleep(.5)
 
