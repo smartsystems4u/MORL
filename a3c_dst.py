@@ -20,9 +20,10 @@ n_train_processes = 5
 learning_rate = 0.00002
 update_interval = 5
 gamma = 0.98
-max_train_ep = 2000
-max_test_ep = 2000
+max_train_ep = 20000
+max_test_ep = 20000
 goal_size = 10
+log_interval = 1000
 
 
 class ActorCritic(nn.Module):
@@ -54,7 +55,8 @@ def train(rank, weights, data_pool ):
     env = DeepSeaTreasureEnv()
 
     for n_epi in range(max_train_ep):
-        print(f'agent {rank} starting epoch {n_epi}')
+        if n_epi % log_interval == 0:
+            print(f'agent {rank} starting epoch {n_epi}')
         epoch_reward1 = []
         epoch_reward2 = []
         epoch_loss = []
@@ -163,12 +165,16 @@ def test(weights, data_pool):
 
     for i in range(max_test_ep):
         # receive rewards
-        print(f'checking for new data for epoch {i}')
+        if i % log_interval == 0:
+            print(f'checking for new data for epoch {i}')
+
         while not data_complete(loss_list, i):
             try:
                 data = data_pool.get_nowait()
 
-                print(f'got data: {data}')
+                if i % log_interval == 0:
+                    print(f'got data: {data}')
+
                 n_epi = data[0]
                 rank = data[1]
                 loss = data[2]
@@ -187,12 +193,15 @@ def test(weights, data_pool):
 
 
         # calculate hypervolume
-        print('calculating hypervolume')
+        if i % log_interval == 0:
+            print('calculating hypervolume')
+
         reward_set = reward_list[:, i]
         reward_set = list(filter(None, reward_set))
         if reward_set:
             hypervolume = hv.hypervolume(reward_set, [100, 100])
-            print(f'Hypervolume indicator for episode {i}: {hypervolume} for {len(reward_set)} points')
+            if i % log_interval == 0:
+                print(f'Hypervolume indicator for episode {i}: {hypervolume} for {len(reward_set)} points')
             summary_writer.add_scalar("hypervolume_indicator", hypervolume, i)
         else:
             print('reward_set is empty')
