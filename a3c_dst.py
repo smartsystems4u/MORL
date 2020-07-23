@@ -16,7 +16,7 @@ from torch.utils.tensorboard import SummaryWriter
 from deep_sea_treasure_env.deep_sea_treasure_env import DeepSeaTreasureEnv
 
 # Hyperparameters
-n_train_processes = 5
+n_train_processes = 24
 learning_rate = 0.00002
 update_interval = 5
 gamma = 0.98
@@ -164,13 +164,51 @@ def test(weights, data_pool):
     pi_list = np.empty((100, max_test_ep), dtype=float)
     advantage_list = np.empty((100, max_test_ep), dtype=float)
 
-    for i in range(max_test_ep):
-        # receive rewards
-        if i % log_interval == 0:
-            print(f'checking for new data for epoch {i}')
+    i = 0
+    while i < max_test_ep:
+
+
+        if data_complete(loss_list, i):
+            # receive rewards
+            if i % log_interval == 0:
+                print(f'processing data for epoch {i}')
+
+            # calculate hypervolume
+            if i % log_interval == 0:
+                print('calculating hypervolume')
+
+            reward_set = reward_list[:, i]
+            reward_set = list(filter(None, reward_set))
+            if reward_set:
+                hypervolume = hv.hypervolume(reward_set, [100, 100])
+                if i % log_interval == 0:
+                    print(f'Hypervolume indicator for episode {i}: {hypervolume} for {len(reward_set)} points')
+                summary_writer.add_scalar("hypervolume_indicator", hypervolume, i)
+                i += 1
+            else:
+                print('reward_set is empty')
+
+            for agent_rank in range(1, n_train_processes + 1):
+                summary_writer.add_scalar(f'agent_{agent_rank}_weight_1', weights[agent_rank][0], i)
+                summary_writer.add_scalar(f'agent_{agent_rank}_weight_2', weights[agent_rank][1], i)
+
+                if loss_list[agent_rank][i]:
+                    summary_writer.add_scalar(f'agent_{agent_rank}_loss', loss_list[agent_rank][i], i)
+
+                if pi_list[agent_rank][i]:
+                    summary_writer.add_scalar(f'agent_{agent_rank}_pi', pi_list[agent_rank][i], i)
+
+                if advantage_list[agent_rank][i]:
+                    summary_writer.add_scalar(f'agent_{agent_rank}_advantage', advantage_list[agent_rank][i], i)
+
+                if reward_list[agent_rank][i]:
+                    summary_writer.add_scalar(f'agent_{agent_rank}_reward_1', reward_list[agent_rank][i][0], i)
+
+                if reward_list[agent_rank][i]:
+                    summary_writer.add_scalar(f'agent_{agent_rank}_reward_2', reward_list[agent_rank][i][1], i)
 
         queue_empty = False
-        while not data_complete(loss_list, i) or not queue_empty:
+        while not queue_empty:
             try:
                 data = data_pool.get_nowait()
 
@@ -193,55 +231,6 @@ def test(weights, data_pool):
                 queue_empty = True
                 print('Log Epoch: Waiting for data...')
                 time.sleep(.5)
-
-
-        # calculate hypervolume
-        if i % log_interval == 0:
-            print('calculating hypervolume')
-
-        reward_set = reward_list[:, i]
-        reward_set = list(filter(None, reward_set))
-        if reward_set:
-            hypervolume = hv.hypervolume(reward_set, [100, 100])
-            if i % log_interval == 0:
-                print(f'Hypervolume indicator for episode {i}: {hypervolume} for {len(reward_set)} points')
-            summary_writer.add_scalar("hypervolume_indicator", hypervolume, i)
-        else:
-            print('reward_set is empty')
-
-        for agent_rank in range(1, n_train_processes+1):
-            summary_writer.add_scalar(f'agent_{agent_rank}_weight_1', weights[agent_rank][0], i)
-            summary_writer.add_scalar(f'agent_{agent_rank}_weight_2', weights[agent_rank][1], i)
-
-            if loss_list[agent_rank][i]:
-                summary_writer.add_scalar(f'agent_{agent_rank}_loss',loss_list[agent_rank][i], i)
-                # summary_writer.add_scalar(
-                #     f'agent_{agent_rank}_weights_{weights[agent_rank][0]}_{weights[agent_rank][1]}_loss',
-                #     loss_list[agent_rank][i], i)
-
-            if pi_list[agent_rank][i]:
-                summary_writer.add_scalar(f'agent_{agent_rank}_pi', pi_list[agent_rank][i], i)
-                # summary_writer.add_scalar(
-                #     f'agent_{agent_rank}_weights_{weights[agent_rank][0]}_{weights[agent_rank][1]}_pi',
-                #     pi_list[agent_rank][i], i)
-
-            if advantage_list[agent_rank][i]:
-                summary_writer.add_scalar(f'agent_{agent_rank}_advantage', advantage_list[agent_rank][i], i)
-                # summary_writer.add_scalar(
-                #     f'agent_{agent_rank}_weights_{weights[agent_rank][0]}_{weights[agent_rank][1]}_advantage',
-                #     advantage_list[agent_rank][i], i)
-
-            if reward_list[agent_rank][i]:
-                summary_writer.add_scalar(f'agent_{agent_rank}_reward_1', reward_list[agent_rank][i][0], i)
-                # summary_writer.add_scalar(
-                #     f'agent_{agent_rank}_weights_{weights[agent_rank][0]}_{weights[agent_rank][1]}_reward_1',
-                #     reward_list[agent_rank][i][0], i)
-
-            if reward_list[agent_rank][i]:
-                summary_writer.add_scalar(f'agent_{agent_rank}_reward_2', reward_list[agent_rank][i][1], i)
-                # summary_writer.add_scalar(
-                #     f'agent_{agent_rank}_weights_{weights[agent_rank][0]}_{weights[agent_rank][1]}_reward_2',
-                #     reward_list[agent_rank][i][1], i)
 
 
 if __name__ == '__main__':
