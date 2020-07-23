@@ -170,7 +170,7 @@ def test(weights, data_pool):
             print(f'checking for new data for epoch {i}')
 
         queue_empty = False
-        while not data_complete(loss_list, i) and not queue_empty:
+        while not data_complete(loss_list, i) or not queue_empty:
             try:
                 data = data_pool.get_nowait()
 
