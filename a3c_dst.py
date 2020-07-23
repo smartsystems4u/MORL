@@ -152,7 +152,7 @@ def data_complete(loss_list, epoch):
 
     return True
 
-def test(weights, data_pool):
+def test(weights, data_pools):
     summary_writer = SummaryWriter(filename_suffix=datetime.datetime.now().ctime().replace(" ", "_"))
     # time.sleep(10)
     # while data_pool.empty():
@@ -207,37 +207,41 @@ def test(weights, data_pool):
                 if reward_list[agent_rank][i]:
                     summary_writer.add_scalar(f'agent_{agent_rank}_reward_2', reward_list[agent_rank][i][1], i)
 
-        queue_empty = False
-        while not queue_empty:
-            try:
-                data = data_pool.get_nowait()
+        for i in range(n_train_processes):
+            queue_not_empty = True
+            while queue_not_empty:
+                try:
+                    data = data_pools[i].get_nowait()
 
-                if i % log_interval == 0:
-                    print(f'got data: {data}')
+                    if i % log_interval == 0:
+                        print(f'got data: {data}')
 
-                n_epi = data[0]
-                rank = data[1]
-                loss = data[2]
-                pi = data[3]
-                advantage = data[4]
-                avg_reward_1 = data[5]
-                avg_reward_2 = data[6]
+                    n_epi = data[0]
+                    rank = data[1]
+                    loss = data[2]
+                    pi = data[3]
+                    advantage = data[4]
+                    avg_reward_1 = data[5]
+                    avg_reward_2 = data[6]
 
-                reward_list[rank][n_epi] = (avg_reward_1, avg_reward_2)
-                loss_list[rank][n_epi] = loss
-                pi_list[rank][n_epi] = pi
-                advantage_list[rank][n_epi] = advantage
-            except queue.Empty:
-                queue_empty = True
-                print('Log Epoch: Waiting for data...')
-                time.sleep(.5)
+                    reward_list[rank][n_epi] = (avg_reward_1, avg_reward_2)
+                    loss_list[rank][n_epi] = loss
+                    pi_list[rank][n_epi] = pi
+                    advantage_list[rank][n_epi] = advantage
+                except queue.Empty:
+                    queue_not_empty = False
+                # print('Log Epoch: Waiting for data...')
+                # time.sleep(.5)
 
 
 if __name__ == '__main__':
     mp.set_start_method('spawn')  # Deal with fork issues
     global_model = ActorCritic()
     global_model.share_memory()
-    data_pool = mp.Queue()
+    data_pools = []
+
+    for i in range(n_train_processes):
+        data_pools.append(mp.Queue())
 
     weights = np.array(list(itertools.product(range(0, goal_size, int(goal_size / goal_partition)),
                                      range(0, goal_size, int(goal_size / goal_partition)))))
@@ -248,9 +252,9 @@ if __name__ == '__main__':
     processes = []
     for rank in range(0, n_train_processes + 1):  # + 1 for test process
         if rank == 0:
-            p = mp.Process(target=test, args=(weights[selected_weights], data_pool))
+            p = mp.Process(target=test, args=(weights[selected_weights], data_pools))
         else:
-            p = mp.Process(target=train, args=(rank, weights[selected_weights][rank-1], data_pool))
+            p = mp.Process(target=train, args=(rank, weights[selected_weights][rank-1], data_pools[rank-1]))
         p.start()
         processes.append(p)
     for p in processes:
