@@ -22,7 +22,8 @@ update_interval = 5
 gamma = 0.98
 max_train_ep = 20000
 max_test_ep = 20000
-goal_size = 10
+goal_size = 10  # weight range for agents
+goal_partition = 5  # step size for weight range
 log_interval = 1000
 
 
@@ -247,8 +248,8 @@ if __name__ == '__main__':
     global_model.share_memory()
     data_pool = mp.Queue()
 
-    weights = np.array(list(itertools.product(range(0, goal_size, int(goal_size / n_train_processes)),
-                                     range(0, goal_size, int(goal_size / n_train_processes)))))
+    weights = np.array(list(itertools.product(range(0, goal_size, int(goal_size / goal_partition)),
+                                     range(0, goal_size, int(goal_size / goal_partition)))))
 
     #randomly sample from weightspace
     selected_weights = np.random.choice(len(weights), n_train_processes+1, replace=False)
