@@ -16,15 +16,16 @@ from torch.utils.tensorboard import SummaryWriter
 from deep_sea_treasure_env.deep_sea_treasure_env import DeepSeaTreasureEnv
 
 # Hyperparameters
-n_train_processes = 24
-learning_rate = 0.00002
-update_interval = 5
-gamma = 0.98
-max_train_ep = 2000
-max_test_ep = 2000
+n_train_processes = 24  # Number of workers
+learning_rate = 0.00002  # LR of 0.00002 works well with deep sea treasure env.
+update_interval = 5  # nr of steps before actor critic network update
+gamma = 0.98  # discount factor
+max_train_ep = 2000  # maximum episodes for training
+max_test_ep = 2000  # maximum episodes for testing/logging
 goal_size = 10  # weight range for agents
 goal_partition = 5  # step size for weight range
-log_interval = 1000
+log_interval = 1000  # interval for log messages
+queue_read_interval = 1000  # max items read from queue
 
 
 class ActorCritic(nn.Module):
@@ -133,13 +134,13 @@ def train(rank, weights, data_pool ):
     env.close()
 
     while not data_pool.empty():
-        print(f'not all data consumed, waiting...')
+        print(f'Agent {rank}: not all data consumed, waiting...')
         time.sleep(1)
 
     print("Training process {} reached maximum episode.".format(rank))
 
 def data_complete(loss_list, epoch):
-    for i in range(1, n_train_processes+1):
+    for i in range(n_train_processes):
         if loss_list[i, epoch] == 0:
             return False
 
@@ -147,10 +148,6 @@ def data_complete(loss_list, epoch):
 
 def test(weights, data_pools):
     summary_writer = SummaryWriter(filename_suffix=datetime.datetime.now().ctime().replace(" ", "_"))
-    # time.sleep(10)
-    # while data_pool.empty():
-    #     print('Start Logging: Waiting for data...')
-    #     time.sleep(1)
 
     reward_list = np.empty((100, max_test_ep), dtype=tuple)
     loss_list = np.empty((100, max_test_ep), dtype=float)
@@ -164,10 +161,6 @@ def test(weights, data_pools):
             # receive rewards
             if i_epi % log_interval == 0:
                 print(f'processing data for epoch {i_epi}')
-
-            # calculate hypervolume
-            if i_epi % log_interval == 0:
-                print('calculating hypervolume')
 
             reward_set = reward_list[:, i_epi]
             reward_set = list(filter(None, reward_set))
@@ -200,38 +193,34 @@ def test(weights, data_pools):
 
             i_epi += 1
 
-        for i in range(n_train_processes):
+        for i in range(n_train_processes):  # iterate over worker queues
             queue_not_empty = True
 
             read_counter = 0
-            while queue_not_empty:
-                try:
-                    data = data_pools[i].get_nowait()
+            if loss_list[i, max_test_ep-1] == 0:  # only read from unfinished workers
+                while queue_not_empty and read_counter < queue_read_interval:
+                    try:
+                        data = data_pools[i].get_nowait()
 
-                    # if read_counter % log_interval == 0:
-                    #     print(f'got data: {data}')
+                        n_epi = data[0]
+                        rank = data[1]
+                        loss = data[2]
+                        pi = data[3]
+                        advantage = data[4]
+                        avg_reward_1 = data[5]
+                        avg_reward_2 = data[6]
 
-                    n_epi = data[0]
-                    rank = data[1]
-                    loss = data[2]
-                    pi = data[3]
-                    advantage = data[4]
-                    avg_reward_1 = data[5]
-                    avg_reward_2 = data[6]
+                        reward_list[rank][n_epi] = (avg_reward_1, avg_reward_2)
+                        loss_list[rank][n_epi] = loss
+                        pi_list[rank][n_epi] = pi
+                        advantage_list[rank][n_epi] = advantage
 
-                    reward_list[rank][n_epi] = (avg_reward_1, avg_reward_2)
-                    loss_list[rank][n_epi] = loss
-                    pi_list[rank][n_epi] = pi
-                    advantage_list[rank][n_epi] = advantage
-
-                    read_counter += 1
-                except queue.Empty:
-                    queue_not_empty = False
-                    if read_counter > 0:
-                        print(f'read_queue for agent {i}, got {read_counter} datapoints')
-                        print(f'last datapoint {data}')
-                # print('Log Epoch: Waiting for data...')
-                # time.sleep(.5)
+                        read_counter += 1
+                    except queue.Empty:
+                        queue_not_empty = False
+                        if read_counter > 0:
+                            print(f'read_queue for agent {i}, got {read_counter} datapoints')
+                            print(f'last datapoint {data}')
 
 if __name__ == '__main__':
     mp.set_start_method('spawn')  # Deal with fork issues
@@ -253,7 +242,7 @@ if __name__ == '__main__':
         if rank == 0:
             p = mp.Process(target=test, args=(weights[selected_weights], data_pools))
         else:
-            p = mp.Process(target=train, args=(rank, weights[selected_weights][rank-1], data_pools[rank-1]))
+            p = mp.Process(target=train, args=(rank-1, weights[selected_weights][rank-1], data_pools[rank-1]))
         p.start()
         processes.append(p)
     for p in processes:
