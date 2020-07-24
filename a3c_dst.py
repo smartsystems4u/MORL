@@ -208,8 +208,8 @@ def test(weights, data_pools):
                 try:
                     data = data_pools[i].get_nowait()
 
-                    if read_counter % log_interval == 0:
-                        print(f'got data: {data}')
+                    # if read_counter % log_interval == 0:
+                    #     print(f'got data: {data}')
 
                     n_epi = data[0]
                     rank = data[1]
@@ -227,6 +227,9 @@ def test(weights, data_pools):
                     read_counter += 1
                 except queue.Empty:
                     queue_not_empty = False
+                    if read_counter > 0:
+                        print(f'read_queue for agent {i}, got {read_counter} datapoints')
+                        print(f'last datapoint {data}')
                 # print('Log Epoch: Waiting for data...')
                 # time.sleep(.5)
 
