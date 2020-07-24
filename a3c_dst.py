@@ -135,7 +135,7 @@ def train(rank, weights, data_pool ):
 
     while not data_pool.empty():
         print(f'Agent {rank}: not all data consumed, waiting...')
-        time.sleep(1)
+        time.sleep(10)
 
     print("Training process {} reached maximum episode.".format(rank))
 
@@ -146,6 +146,13 @@ def data_complete(loss_list, epoch):
 
     return True
 
+def first_missing(loss_list, epoch):
+    for i in range(n_train_processes):
+        if loss_list[i, epoch] == 0:
+            return i
+
+    return -1
+
 def test(weights, data_pools):
     summary_writer = SummaryWriter(filename_suffix=datetime.datetime.now().ctime().replace(" ", "_"))
 
@@ -155,9 +162,11 @@ def test(weights, data_pools):
     advantage_list = np.empty((100, max_test_ep), dtype=float)
 
     i_epi = 0
+    test_iteration = 0
     while i_epi < max_test_ep:
 
         if data_complete(loss_list, i_epi):
+            test_iteration = 0
             # receive rewards
             if i_epi % log_interval == 0:
                 print(f'processing data for epoch {i_epi}')
@@ -192,6 +201,11 @@ def test(weights, data_pools):
                     summary_writer.add_scalar(f'agent_{agent_rank}_reward_2', reward_list[agent_rank][i_epi][1], i_epi)
 
             i_epi += 1
+        else:
+            test_iteration +=1
+            if test_iteration % log_interval == 0:
+                print(f'Waiting for epoch {i_epi} to be completed by all workers')
+                print(f'Waiting for worker: {first_missing(loss_list, i_epi)}')
 
         for i in range(n_train_processes):  # iterate over worker queues
             queue_not_empty = True
@@ -221,6 +235,9 @@ def test(weights, data_pools):
                         if read_counter > 0:
                             print(f'read_queue for agent {i}, got {read_counter} datapoints')
                             print(f'last datapoint {data}')
+                if read_counter == queue_read_interval:
+                    print(f'read queue for agent {i}, got {read_counter} datapoints')
+                    print(f'last datapoint {data}')
 
 if __name__ == '__main__':
     mp.set_start_method('spawn')  # Deal with fork issues
