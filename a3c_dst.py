@@ -20,8 +20,8 @@ n_train_processes = 24
 learning_rate = 0.00002
 update_interval = 5
 gamma = 0.98
-max_train_ep = 20000
-max_test_ep = 20000
+max_train_ep = 2000
+max_test_ep = 2000
 goal_size = 10  # weight range for agents
 goal_partition = 5  # step size for weight range
 log_interval = 1000
@@ -49,7 +49,6 @@ class ActorCritic(nn.Module):
 def train(rank, weights, data_pool ):
     print(f'agent_{rank} starting...')
     local_model = ActorCritic()
-    #local_model.load_state_dict(global_model.state_dict())
 
     optimizer = optim.Adam(local_model.parameters(), lr=learning_rate)
 
@@ -102,14 +101,8 @@ def train(rank, weights, data_pool ):
 
             optimizer.zero_grad()
             loss.mean().backward()
-            # for global_param, local_param in zip(global_model.parameters(), local_model.parameters()):
-            #     global_param._grad = local_param.grad
             optimizer.step()
-            # local_model.load_state_dict(global_model.state_dict())
 
-            # share scalarized average score
-            #scalarized_reward = weights[0] * (sum([reward[0] for reward in r_lst]) / len(r_lst)) + \
-            #    weights[1] * (sum([reward[1] for reward in r_lst]) / len(r_lst))
             avg_reward_1 = sum([reward[0] for reward in r_lst]) / len(r_lst)
             avg_reward_2 = sum([reward[1] for reward in r_lst]) / len(r_lst)
             epoch_reward1.append(avg_reward_1)
@@ -164,56 +157,57 @@ def test(weights, data_pools):
     pi_list = np.empty((100, max_test_ep), dtype=float)
     advantage_list = np.empty((100, max_test_ep), dtype=float)
 
-    i = 0
-    while i < max_test_ep:
+    i_epi = 0
+    while i_epi < max_test_ep:
 
-
-        if data_complete(loss_list, i):
+        if data_complete(loss_list, i_epi):
             # receive rewards
-            if i % log_interval == 0:
-                print(f'processing data for epoch {i}')
+            if i_epi % log_interval == 0:
+                print(f'processing data for epoch {i_epi}')
 
             # calculate hypervolume
-            if i % log_interval == 0:
+            if i_epi % log_interval == 0:
                 print('calculating hypervolume')
 
-            reward_set = reward_list[:, i]
+            reward_set = reward_list[:, i_epi]
             reward_set = list(filter(None, reward_set))
             if reward_set:
                 hypervolume = hv.hypervolume(reward_set, [100, 100])
-                if i % log_interval == 0:
-                    print(f'Hypervolume indicator for episode {i}: {hypervolume} for {len(reward_set)} points')
-                summary_writer.add_scalar("hypervolume_indicator", hypervolume, i)
-                i += 1
+                if i_epi % log_interval == 0:
+                    print(f'Hypervolume indicator for episode {i_epi}: {hypervolume} for {len(reward_set)} points')
+                summary_writer.add_scalar("hypervolume_indicator", hypervolume, i_epi)
             else:
                 print('reward_set is empty')
 
             for agent_rank in range(1, n_train_processes + 1):
-                summary_writer.add_scalar(f'agent_{agent_rank}_weight_1', weights[agent_rank][0], i)
-                summary_writer.add_scalar(f'agent_{agent_rank}_weight_2', weights[agent_rank][1], i)
+                summary_writer.add_scalar(f'agent_{agent_rank}_weight_1', weights[agent_rank][0], i_epi)
+                summary_writer.add_scalar(f'agent_{agent_rank}_weight_2', weights[agent_rank][1], i_epi)
 
-                if loss_list[agent_rank][i]:
-                    summary_writer.add_scalar(f'agent_{agent_rank}_loss', loss_list[agent_rank][i], i)
+                if loss_list[agent_rank][i_epi]:
+                    summary_writer.add_scalar(f'agent_{agent_rank}_loss', loss_list[agent_rank][i_epi], i_epi)
 
-                if pi_list[agent_rank][i]:
-                    summary_writer.add_scalar(f'agent_{agent_rank}_pi', pi_list[agent_rank][i], i)
+                if pi_list[agent_rank][i_epi]:
+                    summary_writer.add_scalar(f'agent_{agent_rank}_pi', pi_list[agent_rank][i_epi], i_epi)
 
-                if advantage_list[agent_rank][i]:
-                    summary_writer.add_scalar(f'agent_{agent_rank}_advantage', advantage_list[agent_rank][i], i)
+                if advantage_list[agent_rank][i_epi]:
+                    summary_writer.add_scalar(f'agent_{agent_rank}_advantage', advantage_list[agent_rank][i_epi], i_epi)
 
-                if reward_list[agent_rank][i]:
-                    summary_writer.add_scalar(f'agent_{agent_rank}_reward_1', reward_list[agent_rank][i][0], i)
+                if reward_list[agent_rank][i_epi]:
+                    summary_writer.add_scalar(f'agent_{agent_rank}_reward_1', reward_list[agent_rank][i_epi][0], i_epi)
 
-                if reward_list[agent_rank][i]:
-                    summary_writer.add_scalar(f'agent_{agent_rank}_reward_2', reward_list[agent_rank][i][1], i)
+                if reward_list[agent_rank][i_epi]:
+                    summary_writer.add_scalar(f'agent_{agent_rank}_reward_2', reward_list[agent_rank][i_epi][1], i_epi)
+
+            i_epi += 1
 
         for i in range(n_train_processes):
             queue_not_empty = True
+
             while queue_not_empty:
                 try:
                     data = data_pools[i].get_nowait()
 
-                    if i % log_interval == 0:
+                    if i_epi % log_interval == 0:
                         print(f'got data: {data}')
 
                     n_epi = data[0]
@@ -232,7 +226,6 @@ def test(weights, data_pools):
                     queue_not_empty = False
                 # print('Log Epoch: Waiting for data...')
                 # time.sleep(.5)
-
 
 if __name__ == '__main__':
     mp.set_start_method('spawn')  # Deal with fork issues
