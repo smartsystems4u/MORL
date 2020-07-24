@@ -203,11 +203,12 @@ def test(weights, data_pools):
         for i in range(n_train_processes):
             queue_not_empty = True
 
+            read_counter = 0
             while queue_not_empty:
                 try:
                     data = data_pools[i].get_nowait()
 
-                    if i_epi % log_interval == 0:
+                    if read_counter % log_interval == 0:
                         print(f'got data: {data}')
 
                     n_epi = data[0]
@@ -222,6 +223,8 @@ def test(weights, data_pools):
                     loss_list[rank][n_epi] = loss
                     pi_list[rank][n_epi] = pi
                     advantage_list[rank][n_epi] = advantage
+
+                    read_counter += 1
                 except queue.Empty:
                     queue_not_empty = False
                 # print('Log Epoch: Waiting for data...')
