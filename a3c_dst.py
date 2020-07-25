@@ -206,6 +206,7 @@ def test(weights, data_pools):
             if test_iteration % log_interval == 0:
                 print(f'Waiting for epoch {i_epi} to be completed by all workers')
                 print(f'Waiting for worker: {first_missing(loss_list, i_epi)}')
+                time.sleep(5)
 
         for i in range(n_train_processes):  # iterate over worker queues
             queue_not_empty = True
