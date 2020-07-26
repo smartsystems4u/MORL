@@ -20,12 +20,12 @@ n_train_processes = 24  # Number of workers
 learning_rate = 0.00002  # LR of 0.00002 works well with deep sea treasure env.
 update_interval = 5  # nr of steps before actor critic network update
 gamma = 0.98  # discount factor
-max_train_ep = 2000  # maximum episodes for training
-max_test_ep = 2000  # maximum episodes for testing/logging
+max_train_ep = 1000  # maximum episodes for training
+max_test_ep = 1000  # maximum episodes for testing/logging
 goal_size = 10  # weight range for agents
 goal_partition = 5  # step size for weight range
 log_interval = 1000  # interval for log messages
-queue_read_interval = 1000  # max items read from queue
+queue_read_interval = 3000  # max items read from queue
 
 
 class ActorCritic(nn.Module):
@@ -139,16 +139,19 @@ def train(rank, weights, data_pool ):
 
     print("Training process {} reached maximum episode.".format(rank))
 
-def data_complete(loss_list, epoch):
+def data_complete(epi_list, epoch):
     for i in range(n_train_processes):
-        if loss_list[i, epoch] == 0:
+        if epi_list[i, epoch] != epoch:
             return False
 
     return True
 
-def first_missing(loss_list, epoch):
+def first_missing(epi_list, epoch):
+    if epoch >= max_test_ep:
+        return -1
+
     for i in range(n_train_processes):
-        if loss_list[i, epoch] == 0:
+        if epi_list[i, epoch] != epoch:
             return i
 
     return -1
@@ -156,17 +159,16 @@ def first_missing(loss_list, epoch):
 def test(weights, data_pools):
     summary_writer = SummaryWriter(filename_suffix=datetime.datetime.now().ctime().replace(" ", "_"))
 
-    reward_list = np.empty((100, max_test_ep), dtype=tuple)
-    loss_list = np.empty((100, max_test_ep), dtype=float)
-    pi_list = np.empty((100, max_test_ep), dtype=float)
-    advantage_list = np.empty((100, max_test_ep), dtype=float)
+    epi_list = np.empty((n_train_processes+1, max_test_ep), dtype=int)
+    reward_list = np.empty((n_train_processes+1, max_test_ep), dtype=tuple)
+    loss_list = np.empty((n_train_processes+1, max_test_ep), dtype=float)
+    pi_list = np.empty((n_train_processes+1, max_test_ep), dtype=float)
+    advantage_list = np.empty((n_train_processes+1, max_test_ep), dtype=float)
 
     i_epi = 0
-    test_iteration = 0
-    while i_epi < max_test_ep:
-
-        if data_complete(loss_list, i_epi):
-            test_iteration = 0
+    while i_epi < (max_test_ep):
+        test_iteration = 0
+        while data_complete(epi_list, i_epi) and test_iteration < queue_read_interval:
             # receive rewards
             if i_epi % log_interval == 0:
                 print(f'processing data for epoch {i_epi}')
@@ -175,8 +177,8 @@ def test(weights, data_pools):
             reward_set = list(filter(None, reward_set))
             if reward_set:
                 hypervolume = hv.hypervolume(reward_set, [100, 100])
-                if i_epi % log_interval == 0:
-                    print(f'Hypervolume indicator for episode {i_epi}: {hypervolume} for {len(reward_set)} points')
+                # if i_epi % log_interval == 0:
+                print(f'Hypervolume indicator for episode {i_epi}: {hypervolume} for {len(reward_set)} points')
                 summary_writer.add_scalar("hypervolume_indicator", hypervolume, i_epi)
             else:
                 print('reward_set is empty')
@@ -200,19 +202,19 @@ def test(weights, data_pools):
                 if reward_list[agent_rank][i_epi]:
                     summary_writer.add_scalar(f'agent_{agent_rank}_reward_2', reward_list[agent_rank][i_epi][1], i_epi)
 
+            test_iteration += 1
             i_epi += 1
-        else:
-            test_iteration +=1
-            if test_iteration % log_interval == 0:
-                print(f'Waiting for epoch {i_epi} to be completed by all workers')
-                print(f'Waiting for worker: {first_missing(loss_list, i_epi)}')
-                time.sleep(5)
+            if not i_epi < max_test_ep:
+                break
+
+        print(f'Waiting for epoch {i_epi} to be completed by all workers')
+        print(f'Waiting for worker: {first_missing(loss_list, i_epi)}')
 
         for i in range(n_train_processes):  # iterate over worker queues
             queue_not_empty = True
 
             read_counter = 0
-            if loss_list[i, max_test_ep-1] == 0:  # only read from unfinished workers
+            if epi_list[i, max_test_ep-1] != (max_test_ep-1):  # only read from unfinished workers
                 while queue_not_empty and read_counter < queue_read_interval:
                     try:
                         data = data_pools[i].get_nowait()
@@ -225,6 +227,7 @@ def test(weights, data_pools):
                         avg_reward_1 = data[5]
                         avg_reward_2 = data[6]
 
+                        epi_list[rank][n_epi] = n_epi
                         reward_list[rank][n_epi] = (avg_reward_1, avg_reward_2)
                         loss_list[rank][n_epi] = loss
                         pi_list[rank][n_epi] = pi
