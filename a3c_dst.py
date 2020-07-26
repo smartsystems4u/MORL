@@ -48,7 +48,7 @@ class ActorCritic(nn.Module):
 
 
 def train(rank, weights, data_pool ):
-    print(f'agent_{rank} starting...')
+    print(f'agent_{rank} starting...', flush=True)
     local_model = ActorCritic()
 
     optimizer = optim.Adam(local_model.parameters(), lr=learning_rate)
@@ -57,7 +57,7 @@ def train(rank, weights, data_pool ):
 
     for n_epi in range(max_train_ep):
         if n_epi % log_interval == 0:
-            print(f'agent {rank} starting epoch {n_epi}')
+            print(f'agent {rank} starting epoch {n_epi}', flush=True)
         epoch_reward1 = []
         epoch_reward2 = []
         epoch_loss = []
@@ -124,7 +124,7 @@ def train(rank, weights, data_pool ):
 
                 sent = True
             except queue.Full:
-                print('queue in the queue, waiting....')
+                print('queue in the queue, waiting....', flush=True)
                 time.sleep(0.1)
 
         time.sleep(0)  # Yield remaining time
@@ -134,7 +134,7 @@ def train(rank, weights, data_pool ):
     env.close()
 
     while not data_pool.empty():
-        print(f'Agent {rank}: not all data consumed, waiting...')
+        print(f'Agent {rank}: not all data consumed, waiting...', flush=True)
         time.sleep(10)
 
     print("Training process {} reached maximum episode.".format(rank))
@@ -171,14 +171,14 @@ def test(weights, data_pools):
         while data_complete(epi_list, i_epi) and test_iteration < queue_read_interval:
             # receive rewards
             if i_epi % log_interval == 0:
-                print(f'processing data for epoch {i_epi}')
+                print(f'processing data for epoch {i_epi}', flush=True)
 
             reward_set = reward_list[:, i_epi]
             reward_set = list(filter(None, reward_set))
             if reward_set:
                 hypervolume = hv.hypervolume(reward_set, [100, 100])
                 # if i_epi % log_interval == 0:
-                print(f'Hypervolume indicator for episode {i_epi}: {hypervolume} for {len(reward_set)} points')
+                print(f'Hypervolume indicator for episode {i_epi}: {hypervolume} for {len(reward_set)} points', flush=True)
                 summary_writer.add_scalar("hypervolume_indicator", hypervolume, i_epi)
             else:
                 print('reward_set is empty')
@@ -207,8 +207,8 @@ def test(weights, data_pools):
             if not i_epi < max_test_ep:
                 break
 
-        print(f'Waiting for epoch {i_epi} to be completed by all workers')
-        print(f'Waiting for worker: {first_missing(loss_list, i_epi)}')
+        print(f'Waiting for epoch {i_epi} to be completed by all workers', flush=True)
+        print(f'Waiting for worker: {first_missing(loss_list, i_epi)}', flush=True)
 
         for i in range(n_train_processes):  # iterate over worker queues
             queue_not_empty = True
@@ -237,11 +237,11 @@ def test(weights, data_pools):
                     except queue.Empty:
                         queue_not_empty = False
                         if read_counter > 0:
-                            print(f'read_queue for agent {i}, got {read_counter} datapoints')
-                            print(f'last datapoint {data}')
+                            print(f'read_queue for agent {i}, got {read_counter} datapoints', flush=True)
+                            print(f'last datapoint {data}', flush=True)
                 if read_counter == queue_read_interval:
-                    print(f'read queue for agent {i}, got {read_counter} datapoints')
-                    print(f'last datapoint {data}')
+                    print(f'read queue for agent {i}, got {read_counter} datapoints', flush=True)
+                    print(f'last datapoint {data}', flush=True)
 
 if __name__ == '__main__':
     mp.set_start_method('spawn')  # Deal with fork issues
