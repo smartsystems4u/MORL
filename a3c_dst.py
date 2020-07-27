@@ -1,4 +1,5 @@
 import itertools
+import os
 # import torch.multiprocessing as mp
 import queue
 import datetime
@@ -16,7 +17,7 @@ from torch.utils.tensorboard import SummaryWriter
 from deep_sea_treasure_env.deep_sea_treasure_env import DeepSeaTreasureEnv
 
 # Hyperparameters
-n_train_processes = 24  # Number of workers
+n_train_processes = 5  # Number of workers
 learning_rate = 0.00002  # LR of 0.00002 works well with deep sea treasure env.
 update_interval = 5  # nr of steps before actor critic network update
 gamma = 0.98  # discount factor
@@ -26,6 +27,7 @@ goal_size = 10  # weight range for agents
 goal_partition = 5  # step size for weight range
 log_interval = 1000  # interval for log messages
 queue_read_interval = 3000  # max items read from queue
+run_timestamp = datetime.datetime.now().ctime().replace(" ", "_")
 
 
 class ActorCritic(nn.Module):
@@ -139,6 +141,8 @@ def train(rank, weights, data_pool ):
 
     print("Training process {} reached maximum episode.".format(rank))
 
+    torch.save(local_model.state_dict(), f'./agents/{run_timestamp}_agent_{rank}.ai')
+
 def data_complete(epi_list, epoch):
     for i in range(n_train_processes):
         if epi_list[i, epoch] != epoch:
@@ -157,7 +161,7 @@ def first_missing(epi_list, epoch):
     return -1
 
 def test(weights, data_pools):
-    summary_writer = SummaryWriter(filename_suffix=datetime.datetime.now().ctime().replace(" ", "_"))
+    summary_writer = SummaryWriter(filename_suffix=run_timestamp)
 
     epi_list = np.empty((n_train_processes+1, max_test_ep), dtype=int)
     reward_list = np.empty((n_train_processes+1, max_test_ep), dtype=tuple)
@@ -245,6 +249,10 @@ def test(weights, data_pools):
 
 if __name__ == '__main__':
     mp.set_start_method('spawn')  # Deal with fork issues
+    try:
+        os.mkdir('./agents',)
+    except FileExistsError:
+        pass
     global_model = ActorCritic()
     global_model.share_memory()
     data_pools = []
