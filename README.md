@@ -1,3 +1,14 @@
+# Multi objective reinforcement learning
+
+This repo is a fork of minimalRL-pytorch in which the A3C code was made distributed so it can handle multiple objectives. Additionally a new
+Gym environment Deep Sea Treasure is implemented. This is a standard multi-objective optimization problem used to test different optimization
+strategies.
+
+For the description of the Deep Sea Treasure problem, see:
+Vamplew P, Dazeley R, Berry A, Issabekov R, Dekker E (2011) Empirical evaluation methods for multiobjective reinforcement learning algorithms. Mach Learn 84(1-2):51–80
+
+...
+
 # minimalRL-pytorch
 
 Implementations of basic RL algorithms with minimal lines of codes! (PyTorch based)
